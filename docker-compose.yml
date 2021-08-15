@@ -1,0 +1,91 @@
+version: "3"
+services:
+
+  nginx:
+    build: 
+      context: .
+      dockerfile: ./app/nginx/Dockerfile
+      
+    ports:
+      - 80:80
+    volumes:
+      - ./app:/app
+      # - static_volume:/vol/web/static/
+    depends_on:
+      - app
+    restart: "on-failure"
+
+  app:
+    build:
+      context: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app
+    command: >
+      sh -c "
+             python manage.py wait_for_db &&
+             python manage.py migrate &&
+             python manage.py runserver 0.0.0.0:8000 &&
+             python manage.py collectstatic &&
+             gunicorn app.asgi:application --bind 0.0.0.0:8000"
+
+
+    environment:
+      - DB_HOST=db
+      - DB_NAME=app
+      - DB_USER=dbmasteruser
+      - DB_PASS=<A:9|aPZWt8O5%6jLrF]n{#g%.?PN0Je
+      - CELERY_BROKER=redis://redis:6379/0
+      - CELERY_BACKEND=redis://redis:6379/0
+           
+    depends_on:
+      - db
+      - redis
+
+  celery:
+        build: .
+        command: celery -A app worker -l INFO
+        volumes:
+            - ./app:/app
+        environment:
+            - DEBUG=1
+            - CELERY_BROKER=redis://redis:6379/0
+            - CELERY_BACKEND=redis://redis:6379/0
+            - DB_HOST=db
+            - DB_NAME=app
+            - DB_USER=dbmasteruser
+            - DB_PASS=<A:9|aPZWt8O5%6jLrF]n{#g%.?PN0Je
+
+        depends_on:
+            - app
+            - db
+            - redis
+
+  celery-beat:
+    build:
+      context: .
+    user: root
+    command: celery -A app beat -l info
+    volumes:
+      - ./app:/app
+    # env_file:
+    #   - ./.env.dev
+    depends_on:
+      - db
+      - redis
+      - app
+
+  db:
+    image: postgres:10-alpine
+    environment:
+      - POSTGRES_DB=app
+      - POSTGRES_USER=dbmasteruser
+      - POSTGRES_PASSWORD=<A:9|aPZWt8O5%6jLrF]n{#g%.?PN0Je
+   
+
+  redis:
+    restart: always
+    image: redis:5.0.0
+    expose:
+      - "6379"
